@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "fasttransform"
+  site-url: "https://AnswerDotAI.github.io/fasttransform"
+  description: "Transform is the main building block of data pipelines in fastai. And elsewhere if you want."
+  repo-branch: main
+  repo-url: "https://github.com/AnswerDotAI/fasttransform"
