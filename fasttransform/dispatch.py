@@ -10,79 +10,16 @@ from fastcore.utils import *
 
 from collections import defaultdict
 
-# %% auto 0
-__all__ = ['typedispatch', 'lenient_issubclass', 'sorted_topologically', 'TypeDispatch', 'retain_meta', 'default_set_meta',
-           'cast', 'retain_type', 'retain_types', 'explode_types']
-
-# %% ../nbs/04_dispatch.ipynb 5
-def lenient_issubclass(cls, types):
-    "If possible return whether `cls` is a subclass of `types`, otherwise return False."
-    if cls is object and types is not object: return False # treat `object` as highest level
-    try: return isinstance(cls, types) or issubclass(cls, types)
-    except: return False
-
-# %% ../nbs/04_dispatch.ipynb 7
-def sorted_topologically(iterable, *, cmp=operator.lt, reverse=False):
-    "Return a new list containing all items from the iterable sorted topologically"
-    l,res = L(list(iterable)),[]
-    for _ in range(len(l)):
-        t = l.reduce(lambda x,y: y if cmp(y,x) else x)
-        res.append(t), l.remove(t)
-    return res[::-1] if reverse else res
-
-# %% ../nbs/04_dispatch.ipynb 11
-def _chk_defaults(f, ann):
-    pass
-# Implementation removed until we can figure out how to do this without `inspect` module
-#     try: # Some callables don't have signatures, so ignore those errors
-#         params = list(inspect.signature(f).parameters.values())[:min(len(ann),2)]
-#         if any(p.default!=inspect.Parameter.empty for p in params):
-#             warn(f"{f.__name__} has default params. These will be ignored.")
-#     except ValueError: pass
-
-# %% ../nbs/04_dispatch.ipynb 12
-def _p2_anno(f):
-    "Get the 1st 2 annotations of `f`, defaulting to `object`"
-    hints = type_hints(f)
-    ann = [o for n,o in hints.items() if n!='return']
-    if callable(f): _chk_defaults(f, ann)
-    while len(ann)<2: ann.append(object)
-    return ann[:2]
-
-# %% ../nbs/04_dispatch.ipynb 17
-class _TypeDict:
-    def __init__(self): self.d,self.cache = {},{}
-
-    def _reset(self):
-        self.d = {k:self.d[k] for k in sorted_topologically(self.d, cmp=lenient_issubclass)}
-        self.cache = {}
-
-    def add(self, t, f):
-        "Add type `t` and function `f`"
-        if not isinstance(t, tuple): t = tuple(L(union2tuple(t)))
-        for t_ in t: self.d[t_] = f
-        self._reset()
-
-    def all_matches(self, k):
-        "Find first matching type that is a super-class of `k`"
-        if k not in self.cache:
-            types = [f for f in self.d if lenient_issubclass(k,f)]
-            self.cache[k] = [self.d[o] for o in types]
-        return self.cache[k]
-
-    def __getitem__(self, k):
-        "Find first matching type that is a super-class of `k`"
-        res = self.all_matches(k)
-        return res[0] if len(res) else None
-
-    def __repr__(self): return self.d.__repr__()
-    def first(self): return first(self.d.values())
-
-# %% ../nbs/04_dispatch.ipynb 20
 from plum.function import Function
 from plum.signature import Signature
 from plum import NotFoundLookupError, AmbiguousLookupError
 
+# %% auto 0
+__all__ = ['typedispatch', 'TypeDispatch', 'retain_meta', 'default_set_meta', 'cast', 'retain_type', 'retain_types',
+           'explode_types']
+
+# %% ../nbs/04_dispatch.ipynb 5
+# TODO(Rens): Add docs
 class TypeDispatch:
     def __init__(self, funcs=(), bases=()):
         self.func = None
@@ -128,6 +65,7 @@ class TypeDispatch:
 
         # If a single Signature is passed, use it directly
         if not isinstance(k,Signature):
+            # TODO(Rens): Iterable is not specific enough? Str is iterable.
             k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
             
         try:
@@ -149,20 +87,20 @@ class TypeDispatch:
         "Get the return type of annotation of `x`."
         return anno_ret(self[type(x)])
 
-# %% ../nbs/04_dispatch.ipynb 88
-from plum.dispatcher import Dispatcher
-typedispatch = Dispatcher()
+# %% ../nbs/04_dispatch.ipynb 72
+from plum.dispatcher import dispatch
+typedispatch = dispatch
 
-# %% ../nbs/04_dispatch.ipynb 95
+# %% ../nbs/04_dispatch.ipynb 79
 _all_=['cast']
 
-# %% ../nbs/04_dispatch.ipynb 96
+# %% ../nbs/04_dispatch.ipynb 80
 def retain_meta(x, res, as_copy=False):
     "Call `res.set_meta(x)`, if it exists"
     if hasattr(res,'set_meta'): res.set_meta(x, as_copy=as_copy)
     return res
 
-# %% ../nbs/04_dispatch.ipynb 97
+# %% ../nbs/04_dispatch.ipynb 81
 def default_set_meta(self, x, as_copy=False):
     "Copy over `_meta` from `x` to `res`, if it's missing"
     if hasattr(x, '_meta') and not hasattr(self, '_meta'):
@@ -171,7 +109,7 @@ def default_set_meta(self, x, as_copy=False):
         self._meta = meta
     return self
 
-# %% ../nbs/04_dispatch.ipynb 98
+# %% ../nbs/04_dispatch.ipynb 82
 @typedispatch
 def cast(x, typ):
     "cast `x` to type `typ` (may also change `x` inplace)"
@@ -183,7 +121,7 @@ def cast(x, typ):
         except: res = typ(res)
     return retain_meta(x, res)
 
-# %% ../nbs/04_dispatch.ipynb 104
+# %% ../nbs/04_dispatch.ipynb 88
 def retain_type(new, old=None, typ=None, as_copy=False):
     "Cast `new` to type of `old` or `typ` if it's a superclass"
     # e.g. old is TensorImage, new is Tensor - if not subclass then do nothing
@@ -196,7 +134,7 @@ def retain_type(new, old=None, typ=None, as_copy=False):
     if typ==NoneType or isinstance(new, typ): return new
     return retain_meta(old, cast(new, typ), as_copy=as_copy)
 
-# %% ../nbs/04_dispatch.ipynb 108
+# %% ../nbs/04_dispatch.ipynb 92
 def retain_types(new, old=None, typs=None):
     "Cast each item of `new` to type of matching item in `old` if it's a superclass"
     if not is_listy(new): return retain_type(new, old, typs)
@@ -208,7 +146,7 @@ def retain_types(new, old=None, typs=None):
     else: t = type(old) if old is not None and isinstance(old,type(new)) else type(new)
     return t(L(new, old, typs).map_zip(retain_types, cycled=True))
 
-# %% ../nbs/04_dispatch.ipynb 110
+# %% ../nbs/04_dispatch.ipynb 94
 def explode_types(o):
     "Return the type of `o`, potentially in nested dictionaries for thing that are listy"
     if not is_listy(o): return type(o)
