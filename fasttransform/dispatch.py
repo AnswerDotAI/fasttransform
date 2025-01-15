@@ -15,7 +15,7 @@ from plum.signature import Signature
 from plum import NotFoundLookupError, AmbiguousLookupError
 
 # %% auto 0
-__all__ = ['typedispatch', 'FastFunction', 'TypeDispatch', 'DispatchReg', 'retain_meta', 'default_set_meta', 'cast',
+__all__ = ['typedispatch', 'TypeDispatch', 'FastFunction', 'FastDispatcher', 'retain_meta', 'default_set_meta', 'cast',
            'retain_type', 'retain_types', 'explode_types']
 
 # %% ../nbs/04_dispatch.ipynb 4
@@ -24,21 +24,7 @@ def _get_name(f):
     """Get the name of a function or callable object"""
     return getattr(f, '__name__', getattr(f.__class__, '__name__', str(f)))
 
-# %% ../nbs/04_dispatch.ipynb 5
-class FastFunction(Function):
-    """Extension of plum.Function that adds array-like type lookup"""
-    def __getitem__(self, k):
-        """Find first matching type that is a super-class of `k`"""
-        if not isinstance(k,Signature):
-            k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
-            
-        try:
-            self._resolve_pending_registrations()
-            return self._resolver.resolve(k).implementation
-        except NotFoundLookupError:
-            return None
-
-# %% ../nbs/04_dispatch.ipynb 9
+# %% ../nbs/04_dispatch.ipynb 7
 # TODO(Rens): Add docs
 class TypeDispatch:
     "Dictionary-like object; `__getitem__` matches keys of types using `issubclass`"
@@ -69,11 +55,12 @@ class TypeDispatch:
                 def wrapped(*args, **kwargs): return orig_f(*args, **kwargs)
                 wrapped.__name__ = _get_name(f)
                 f = wrapped
-            self.func = FastFunction(f)
+            self.func = Function(f)
         self.func.dispatch(f)
     
     def __call__(self, *args, **kwargs):
-        if self.inst or self.owner:
+        # TODO(Rens): handle staticfunctions/classmethods
+        if (self.inst or self.owner):
             # Add the proper instance/owner as first arg
             args = ((self.inst or self.owner),) + args
             
@@ -90,11 +77,17 @@ class TypeDispatch:
     def __getitem__(self, k):
         "Find first matching type that is a super-class of `k`"
         if not self.func: return None
+        if self.func: self.func._resolve_pending_registrations()
 
-        # Try to find match in current function
-        if (res := self.func[k]): return res
+        # If a single Signature is passed, use it directly
+        if not isinstance(k,Signature):
+            k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
+            
+        try:
+            return self.func._resolver.resolve(k).implementation
+        except NotFoundLookupError:
+            pass
 
-        # Check bases if no match found
         for base in self.bases:
             if (res := base[k]): return res
 
@@ -109,18 +102,75 @@ class TypeDispatch:
         "Get the return type of annotation of `x`."
         return anno_ret(self[type(x)])
 
-# %% ../nbs/04_dispatch.ipynb 76
-class DispatchReg:
-    "A global registry for `TypeDispatch` objects keyed by function name"
-    def __init__(self): self.d = defaultdict(TypeDispatch)
-    def __call__(self, f):
-        if isinstance(f, (classmethod, staticmethod)): nm = f'{f.__func__.__qualname__}'
-        else: nm = f'{f.__qualname__}'
-        if isinstance(f, classmethod): f=f.__func__
-        self.d[nm].add(f)
-        return self.d[nm]
+# %% ../nbs/04_dispatch.ipynb 74
+# this works in 09 vision, but not in 03 data core
+# class DispatchReg:
+#     "A global registry for `TypeDispatch` objects keyed by function name"
+#     def __init__(self): self.d = defaultdict(TypeDispatch)
+#     def __call__(self, f):
+#         if isinstance(f, (classmethod, staticmethod)): nm = f'{f.__func__.__qualname__}'
+#         else: nm = f'{f.__qualname__}'
+#         if isinstance(f, classmethod): f=f.__func__
+#         self.d[nm].add(f)
+#         return self.d[nm]
 
-typedispatch = DispatchReg()
+# typedispatch = DispatchReg()
+
+# # this works in 03 data core, but not with 09 vision
+# from plum.dispatcher import Dispatcher
+# typedispatch = Dispatcher()
+
+# %% ../nbs/04_dispatch.ipynb 75
+from plum.dispatcher import Dispatcher, is_in_class
+
+class FastFunction(Function):
+    def __getitem__(self, k):
+        self._resolve_pending_registrations()
+
+        # If a single Signature is passed, use it directly
+        if not isinstance(k,Signature):
+            k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
+
+        try:
+            return self._resolver.resolve(k).implementation
+        except NotFoundLookupError:
+            pass
+        
+        # TODO(Rens): this is a temporary fix for fastai 
+        # which uses show_batch[object] while the function has 3 args
+        # so technically show_batch[object, object, object] would be ok.
+        # if k.types == (object,):
+        if self.__name__ == "show_batch" and len(k.types) == 1:
+            return self.__getitem__(k.types + (object, object))
+            
+        return None
+
+
+class FastDispatcher(Dispatcher):
+    def _get_function(self, method: Callable) -> FastFunction:
+        # If a class is the owner, use a namespace specific for that class. Otherwise,
+        # use the global namespace.
+        if is_in_class(method):
+            owner = get_class(method)
+            if owner not in self.classes:
+                self.classes[owner] = {}
+            namespace = self.classes[owner]
+        else:
+            owner = None
+            namespace = self.functions
+
+        # Create a new function only if the function does not already exist.
+        name = method.__name__
+        if name not in namespace:
+            namespace[name] = FastFunction(
+                method,
+                owner=owner,
+                warn_redefinition=self.warn_redefinition,
+            )
+
+        return namespace[name]
+
+typedispatch = FastDispatcher()
 
 # %% ../nbs/04_dispatch.ipynb 83
 _all_=['cast']
