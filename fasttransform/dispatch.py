@@ -15,12 +15,33 @@ from plum.signature import Signature
 from plum import NotFoundLookupError, AmbiguousLookupError
 
 # %% auto 0
-__all__ = ['typedispatch', 'TypeDispatch', 'retain_meta', 'default_set_meta', 'cast', 'retain_type', 'retain_types',
-           'explode_types']
+__all__ = ['typedispatch', 'FastFunction', 'TypeDispatch', 'DispatchReg', 'retain_meta', 'default_set_meta', 'cast',
+           'retain_type', 'retain_types', 'explode_types']
+
+# %% ../nbs/04_dispatch.ipynb 4
+# TODO(Rens): find better spot for this?
+def _get_name(f):
+    """Get the name of a function or callable object"""
+    return getattr(f, '__name__', getattr(f.__class__, '__name__', str(f)))
 
 # %% ../nbs/04_dispatch.ipynb 5
+class FastFunction(Function):
+    """Extension of plum.Function that adds array-like type lookup"""
+    def __getitem__(self, k):
+        """Find first matching type that is a super-class of `k`"""
+        if not isinstance(k,Signature):
+            k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
+            
+        try:
+            self._resolve_pending_registrations()
+            return self._resolver.resolve(k).implementation
+        except NotFoundLookupError:
+            return None
+
+# %% ../nbs/04_dispatch.ipynb 9
 # TODO(Rens): Add docs
 class TypeDispatch:
+    "Dictionary-like object; `__getitem__` matches keys of types using `issubclass`"
     def __init__(self, funcs=(), bases=()):
         self.func = None
         self.bases = [b for b in (bases if isinstance(bases, Iterable) else (bases,)) 
@@ -37,10 +58,18 @@ class TypeDispatch:
         
         funcs = funcs if isinstance(funcs, Iterable) else (funcs,)
         for f in funcs: self.add(f)     
-    
+
     def add(self, f):
-        if not self.func: 
-            self.func = Function(f)
+        "Add type `t` and function `f`"
+        if not self.func:
+            # TODO(Rens): extract to separate func?
+            # Wrap f in a function that has __name__
+            if not hasattr(f, '__name__'):
+                orig_f = f
+                def wrapped(*args, **kwargs): return orig_f(*args, **kwargs)
+                wrapped.__name__ = _get_name(f)
+                f = wrapped
+            self.func = FastFunction(f)
         self.func.dispatch(f)
     
     def __call__(self, *args, **kwargs):
@@ -61,18 +90,11 @@ class TypeDispatch:
     def __getitem__(self, k):
         "Find first matching type that is a super-class of `k`"
         if not self.func: return None
-        if self.func: self.func._resolve_pending_registrations()
 
-        # If a single Signature is passed, use it directly
-        if not isinstance(k,Signature):
-            # TODO(Rens): Iterable is not specific enough? Str is iterable.
-            k = Signature(*k) if isinstance(k, Iterable) else Signature(k)
-            
-        try:
-            return self.func._resolver.resolve(k).implementation
-        except NotFoundLookupError:
-            pass
+        # Try to find match in current function
+        if (res := self.func[k]): return res
 
+        # Check bases if no match found
         for base in self.bases:
             if (res := base[k]): return res
 
@@ -87,20 +109,29 @@ class TypeDispatch:
         "Get the return type of annotation of `x`."
         return anno_ret(self[type(x)])
 
-# %% ../nbs/04_dispatch.ipynb 72
-from plum.dispatcher import dispatch
-typedispatch = dispatch
+# %% ../nbs/04_dispatch.ipynb 76
+class DispatchReg:
+    "A global registry for `TypeDispatch` objects keyed by function name"
+    def __init__(self): self.d = defaultdict(TypeDispatch)
+    def __call__(self, f):
+        if isinstance(f, (classmethod, staticmethod)): nm = f'{f.__func__.__qualname__}'
+        else: nm = f'{f.__qualname__}'
+        if isinstance(f, classmethod): f=f.__func__
+        self.d[nm].add(f)
+        return self.d[nm]
 
-# %% ../nbs/04_dispatch.ipynb 79
+typedispatch = DispatchReg()
+
+# %% ../nbs/04_dispatch.ipynb 83
 _all_=['cast']
 
-# %% ../nbs/04_dispatch.ipynb 80
+# %% ../nbs/04_dispatch.ipynb 84
 def retain_meta(x, res, as_copy=False):
     "Call `res.set_meta(x)`, if it exists"
     if hasattr(res,'set_meta'): res.set_meta(x, as_copy=as_copy)
     return res
 
-# %% ../nbs/04_dispatch.ipynb 81
+# %% ../nbs/04_dispatch.ipynb 85
 def default_set_meta(self, x, as_copy=False):
     "Copy over `_meta` from `x` to `res`, if it's missing"
     if hasattr(x, '_meta') and not hasattr(self, '_meta'):
@@ -109,7 +140,7 @@ def default_set_meta(self, x, as_copy=False):
         self._meta = meta
     return self
 
-# %% ../nbs/04_dispatch.ipynb 82
+# %% ../nbs/04_dispatch.ipynb 86
 @typedispatch
 def cast(x, typ):
     "cast `x` to type `typ` (may also change `x` inplace)"
@@ -121,7 +152,7 @@ def cast(x, typ):
         except: res = typ(res)
     return retain_meta(x, res)
 
-# %% ../nbs/04_dispatch.ipynb 88
+# %% ../nbs/04_dispatch.ipynb 92
 def retain_type(new, old=None, typ=None, as_copy=False):
     "Cast `new` to type of `old` or `typ` if it's a superclass"
     # e.g. old is TensorImage, new is Tensor - if not subclass then do nothing
@@ -134,7 +165,7 @@ def retain_type(new, old=None, typ=None, as_copy=False):
     if typ==NoneType or isinstance(new, typ): return new
     return retain_meta(old, cast(new, typ), as_copy=as_copy)
 
-# %% ../nbs/04_dispatch.ipynb 92
+# %% ../nbs/04_dispatch.ipynb 96
 def retain_types(new, old=None, typs=None):
     "Cast each item of `new` to type of matching item in `old` if it's a superclass"
     if not is_listy(new): return retain_type(new, old, typs)
@@ -146,7 +177,7 @@ def retain_types(new, old=None, typs=None):
     else: t = type(old) if old is not None and isinstance(old,type(new)) else type(new)
     return t(L(new, old, typs).map_zip(retain_types, cycled=True))
 
-# %% ../nbs/04_dispatch.ipynb 94
+# %% ../nbs/04_dispatch.ipynb 98
 def explode_types(o):
     "Return the type of `o`, potentially in nested dictionaries for thing that are listy"
     if not is_listy(o): return type(o)
