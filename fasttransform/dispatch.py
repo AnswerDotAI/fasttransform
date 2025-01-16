@@ -20,6 +20,7 @@ __all__ = ['typedispatch', 'TypeDispatch', 'FastFunction', 'FastDispatcher', 're
 
 # %% ../nbs/04_dispatch.ipynb 4
 # TODO(Rens): find better spot for this?
+# Needed for unnamed functions like attrgetter
 def _get_name(f):
     """Get the name of a function or callable object"""
     return getattr(f, '__name__', getattr(f.__class__, '__name__', str(f)))
@@ -30,8 +31,7 @@ class TypeDispatch:
     "Dictionary-like object; `__getitem__` matches keys of types using `issubclass`"
     def __init__(self, funcs=(), bases=()):
         self.func = None
-        self.bases = [b for b in (bases if isinstance(bases, Iterable) else (bases,)) 
-                    if b is not None]  # Filter out None bases
+        self.bases = L(bases).filter(is_not(None))
         self.inst = None
         self.owner = None
         
