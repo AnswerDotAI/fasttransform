@@ -39,6 +39,7 @@ d = { 'settings': { 'branch': 'main',
                                     'fasttransform.core._is_tuple': ('core.html#_is_tuple', 'fasttransform/core.py'),
                                     'fasttransform.core._subclass_decorator': ('core.html#_subclass_decorator', 'fasttransform/core.py'),
                                     'fasttransform.core.compose_tfms': ('core.html#compose_tfms', 'fasttransform/core.py'),
+                                    'fasttransform.core.gather_attr_names': ('core.html#gather_attr_names', 'fasttransform/core.py'),
                                     'fasttransform.core.gather_attrs': ('core.html#gather_attrs', 'fasttransform/core.py'),
                                     'fasttransform.core.mk_transform': ('core.html#mk_transform', 'fasttransform/core.py'),
                                     'fasttransform.core.retain_type': ('core.html#retain_type', 'fasttransform/core.py')}}}
