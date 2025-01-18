@@ -33,7 +33,7 @@ def retain_type(new, old, ret_type,as_copy=False):
 
 # %% ../nbs/00_core.ipynb 13
 _tfm_methods = 'encodes','decodes','setups'
-99
+
 def _is_tfm_method(n, f): return n in _tfm_methods and callable(f)
 
 class _TfmDict(dict):
@@ -45,13 +45,6 @@ class _TfmDict(dict):
 
 # %% ../nbs/00_core.ipynb 14
 class _TfmMeta(type):
-    def __new__(cls, name, bases, dict):
-        res = super().__new__(cls, name, bases, dict)
-        for nm in _tfm_methods:
-            base_td = [getattr(b,nm,None) for b in bases]
-            if nm in res.__dict__: getattr(res,nm).bases = base_td
-        return res
-
     @classmethod
     def __prepare__(cls, name, bases): 
         return _TfmDict()
@@ -76,11 +69,13 @@ def _subclass_decorator(cls, f):
 # %% ../nbs/00_core.ipynb 19
 class Transform(metaclass=_TfmMeta):
     "Delegates (`__call__`,`decode`,`setup`) to (<code>encodes</code>,<code>decodes</code>,<code>setups</code>) if `split_idx` matches"
+    
     def __init_subclass__(cls):
         # convert _tfm_methods that aren't plum.Functions yet
         for nm in _tfm_methods:
             if hasattr(cls, nm) and not isinstance(getattr(cls, nm), Function):
-                setattr(cls, nm, dispatch(getattr(cls, nm)))
+                f = getattr(cls, nm)
+                setattr(cls, nm, Function(f).dispatch(f))
 
         # Add binding logic to subclass __init__
         def __init__(self):
