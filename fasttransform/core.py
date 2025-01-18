@@ -72,7 +72,8 @@ def _subclass_decorator(cls, f):
 # %% ../nbs/00_core.ipynb 20
 class Transform(metaclass=_TfmMeta):
     "Delegates (`__call__`,`decode`,`setup`) to (<code>encodes</code>,<code>decodes</code>,<code>setups</code>) if `split_idx` matches"
-    
+    split_idx,init_enc,order,train_setup = None,None,0,None
+
     def __init_subclass__(cls):
         # convert _tfm_methods that aren't plum.Functions yet
         for nm in _tfm_methods:
@@ -100,7 +101,10 @@ class Transform(metaclass=_TfmMeta):
         # default usecase
         return super().__new__(cls)
 
-    def __init__(self,enc=None,dec=None):
+    def __init__(self,enc=None,dec=None, split_idx=None, order=None):
+        self.split_idx = ifnone(split_idx, self.split_idx)
+        if order is not None: self.order=order
+            
         enc = L(enc)
         if enc: self.encodes = Function(enc[0])
         for e in enc: self.encodes.dispatch(e)
@@ -109,15 +113,19 @@ class Transform(metaclass=_TfmMeta):
         if dec: self.decodes = Function(dec[0])
         for d in dec: self.decodes.dispatch(d)
 
-    def __call__(self,*args,**kwargs):
-        return self._do_call('encodes',*args,**kwargs)
+    def __call__(self,*args,split_idx=None, **kwargs):
+        return self._call('encodes', split_idx, *args,**kwargs)
     
-    def decode(self, *args, **kwargs):
-        return self._do_call('decodes',*args, **kwargs)
+    def decode(self, *args,split_idx=None, **kwargs):
+        return self._call('decodes', split_idx, *args, **kwargs)
     
     def setup(self, *args, **kwargs):
         raise NotImplementedError()
-        
+    
+    def _call(self, nm, split_idx=None, *args, **kwargs):
+        if split_idx!=self.split_idx and self.split_idx is not None: return args[0]
+        return self._do_call(nm, *args, **kwargs)
+    
     def _do_call(self, nm, *args, **kwargs): 
         x = args[0]
         if not hasattr(self, nm): return x
@@ -135,7 +143,7 @@ class Transform(metaclass=_TfmMeta):
     
 add_docs(Transform, decode="Delegate to decodes to undo transform", setup="Delegate to setups to set up transform")
 
-# %% ../nbs/00_core.ipynb 110
+# %% ../nbs/00_core.ipynb 116
 def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     "Apply all `func_nm` attribute of `tfms` on `x`, maybe in `reverse` order"
     if reverse: tfms = reversed(tfms)
@@ -145,13 +153,13 @@ def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     return x
      
 
-# %% ../nbs/00_core.ipynb 115
+# %% ../nbs/00_core.ipynb 121
 def mk_transform(f):
     "Convert function `f` to `Transform` if it isn't already one"
     f = instantiate(f)
     return f if isinstance(f,(Transform,Pipeline)) else Transform(f)
 
-# %% ../nbs/00_core.ipynb 116
+# %% ../nbs/00_core.ipynb 122
 def gather_attrs(o, k, nm):
     "Used in __getattr__ to collect all attrs `k` from `self.{nm}`"
     if k.startswith('_') or k==nm: raise AttributeError(k)
@@ -160,7 +168,7 @@ def gather_attrs(o, k, nm):
     if not res: raise AttributeError(k)
     return res[0] if len(res)==1 else L(res)
 
-# %% ../nbs/00_core.ipynb 117
+# %% ../nbs/00_core.ipynb 123
 class Pipeline:
     "A pipeline of composed (for encode/decode) transforms, setup with types"
     def __init__(self, funcs=None, split_idx=None):
