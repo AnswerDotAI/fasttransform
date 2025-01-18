@@ -34,79 +34,53 @@ def retain_type(new, old, ret_type,as_copy=False):
         if not isinstance(old, type(new)): return new
         ret_type = old if isinstance(old,type) else type(old)
     if ret_type is NoneType or isinstance(new,ret_type): return new
-    # fastcore.retain_meta and cast are used because
-    # the retain_meta logic is embedded in fastai (and torch itself?)
-    # see 00_torch_core set_meta functions.
-    return retain_meta(old, cast(new, ret_type), as_copy=as_copy)
-    
+    return retain_meta(old, cast(new, ret_type), as_copy=as_copy)   
 
-# %% ../nbs/00_core.ipynb 15
+# %% ../nbs/00_core.ipynb 17
+def _has_self_arg(f) -> bool:
+    try: return f.__code__.co_varnames[0] == 'self'
+    except (AttributeError, IndexError): return False
+
+# %% ../nbs/00_core.ipynb 18
+def _subclass_decorator(cls, f):
+    nm = f.__name__
+    if nm not in _tfm_methods: raise RuntimeError(f"{nm} not in {_tfm_methods}")
+    if not hasattr(cls, nm): setattr(cls, nm, Function(f).dispatch(f))
+    else: getattr(cls,nm).dispatch(f)
+    return cls
+
+# %% ../nbs/00_core.ipynb 19
 _tfm_methods = 'encodes','decodes','setups'
-
 def _is_tfm_method(n, f): return n in _tfm_methods and callable(f)
 
 class _TfmDict(dict):
     def __setitem__(self, k, v):
         if not _is_tfm_method(k, v): return super().__setitem__(k,v)
         if k not in self: super().__setitem__(k,Function(v).dispatch(v))
-        self[k].dispatch(v)
-     
+        self[k].dispatch(v)     
 
-# %% ../nbs/00_core.ipynb 16
+# %% ../nbs/00_core.ipynb 20
 class _TfmMeta(type):
     @classmethod
     def __prepare__(cls, name, bases): 
         return _TfmDict()
 
-# %% ../nbs/00_core.ipynb 20
-def _has_self_arg(f) -> bool:
-    "Check if function `f` has 'self' as first parameter"
-    try: return f.__code__.co_varnames[0] == 'self'
-    # Attribute error if not callable
-    # IndexError if no (kw)args
-    except (AttributeError, IndexError): return False
-
 # %% ../nbs/00_core.ipynb 21
-def _subclass_decorator(cls, f):
-    nm = f.__name__
-    if not hasattr(cls, nm): setattr(cls, nm, Function(f).dispatch(f))
-    else: getattr(cls,nm).dispatch(f)
-    return cls
-
-# %% ../nbs/00_core.ipynb 22
 class Transform(metaclass=_TfmMeta):
     "Delegates (`__call__`,`decode`,`setup`) to (<code>encodes</code>,<code>decodes</code>,<code>setups</code>) if `split_idx` matches"
     split_idx,init_enc,order,train_setup = None,None,0,None
     
-    def __init_subclass__(cls):
-        orig_init = cls.__init__ if hasattr(cls,'__init__') else lambda o: None
-        def __init__(self,*args,**kwargs):
-            orig_init(self, *args, **kwargs)
-            for nm in _tfm_methods:
-                if hasattr(self.__class__, nm):
-                    setattr(self, nm, MethodType(getattr(self.__class__, nm), self))
-        cls.__init__ = __init__
-
-    def __new__(cls, enc=None, dec=None):
-        "Catch use of subclasses of Transform as decorator."
-        if (
-            issubclass(cls,Transform) and   
-            _has_self_arg(enc) and
-            enc.__name__ in _tfm_methods and
-            dec is None
-        ): return _subclass_decorator(cls, enc)
-        return super().__new__(cls)
-
     def __init__(self,enc=None,dec=None, split_idx=None, order=None):
         self.split_idx = ifnone(split_idx, self.split_idx)
         if order is not None: self.order=order 
-        enc = L(enc)
-        if enc: self.encodes = Function(enc[0])
+        if enc:=L(enc): self.encodes = Function(enc[0])
         for e in enc: self.encodes.dispatch(e)
-        dec = L(dec)
-        if dec: self.decodes = Function(dec[0])
+        if dec:=L(dec): self.decodes = Function(dec[0])
         for d in dec: self.decodes.dispatch(d)
 
+    @property
+    def name(self): return getattr(self, '_name', _get_name(self))
+    def __repr__(self): return f'{self.name}:\nencodes: {self.encodes}decodes: {self.decodes}'
     def __call__(self,*args,split_idx=None, **kwargs): return self._call('encodes', split_idx, *args,**kwargs)
     def decode(self, *args,split_idx=None, **kwargs): return self._call('decodes', split_idx, *args, **kwargs)
     def setup(self, items=None, train_setup=False):
@@ -116,29 +90,34 @@ class Transform(metaclass=_TfmMeta):
 
     def _call(self, nm, split_idx=None, *args, **kwargs):
         if split_idx!=self.split_idx and self.split_idx is not None: return args[0]
+        if not hasattr(self, nm): return args[0]
         return self._do_call(nm, *args, **kwargs)
 
-    def _do_call(self, nm, *args, **kwargs): 
+    def _do_call(self, nm, *args, **kwargs):
         x = args[0]
-        if not hasattr(self, nm): return x
-        if _is_tuple(x):
-            res = tuple(self._do_call(nm, x_, *args[1:], **kwargs) for x_ in x)
-            return retain_type(res, x, Any)
-        f_args = args if type(self) is Transform else (self,)+args
-        try:
-            method, ret_type = getattr(self,nm)._resolve_method_with_cache(f_args)
-        except NotFoundLookupError: 
-            return x
-        res = method(*f_args,**kwargs)
-        return retain_type(res, x, ret_type)
-    
-    @property
-    def name(self): return getattr(self, '_name', _get_name(self))
-    def __repr__(self): return f'{self.name}:\nencodes: {self.encodes}decodes: {self.decodes}'
+        if not _is_tuple(x): 
+            f_args = args if type(self) is Transform else (self,)+args
+            try: method, ret_type = getattr(self,nm)._resolve_method_with_cache(f_args)
+            except NotFoundLookupError: return x
+            return retain_type(method(*f_args,**kwargs), x, ret_type)
+        res = tuple(self._do_call(nm, x_, *args[1:], **kwargs) for x_ in x)
+        return retain_type(res, x, Any)
+
+    def __init_subclass__(cls):
+        orig_init = getattr(cls,'__init__',lambda o:None)
+        def __init__(self,*args,**kwargs):
+            orig_init(self, *args, **kwargs)
+            for nm in _tfm_methods: 
+                if o:=getattr(cls,nm,None): setattr(self, nm, MethodType(o, self))
+        cls.__init__ = __init__
+
+    def __new__(cls, enc=None, dec=None):
+        if issubclass(cls,Transform) and _has_self_arg(enc) and dec is None: return _subclass_decorator(cls, enc)
+        return super().__new__(cls)
 
 add_docs(Transform, decode="Delegate to decodes to undo transform", setup="Delegate to setups to set up transform")
 
-# %% ../nbs/00_core.ipynb 117
+# %% ../nbs/00_core.ipynb 116
 def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     "Apply all `func_nm` attribute of `tfms` on `x`, maybe in `reverse` order"
     if reverse: tfms = reversed(tfms)
@@ -148,13 +127,13 @@ def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     return x
      
 
-# %% ../nbs/00_core.ipynb 122
+# %% ../nbs/00_core.ipynb 121
 def mk_transform(f):
     "Convert function `f` to `Transform` if it isn't already one"
     f = instantiate(f)
     return f if isinstance(f,(Transform,Pipeline)) else Transform(f)
 
-# %% ../nbs/00_core.ipynb 123
+# %% ../nbs/00_core.ipynb 122
 def gather_attrs(o, k, nm):
     "Used in __getattr__ to collect all attrs `k` from `self.{nm}`"
     if k.startswith('_') or k==nm: raise AttributeError(k)
@@ -163,12 +142,12 @@ def gather_attrs(o, k, nm):
     if not res: raise AttributeError(k)
     return res[0] if len(res)==1 else L(res)
 
-# %% ../nbs/00_core.ipynb 124
+# %% ../nbs/00_core.ipynb 123
 def gather_attr_names(o, nm):
     "Used in __dir__ to collect all attrs `k` from `self.{nm}`"
     return L(getattr(o,nm)).map(dir).concat().unique()
 
-# %% ../nbs/00_core.ipynb 125
+# %% ../nbs/00_core.ipynb 124
 class Pipeline:
     "A pipeline of composed (for encode/decode) transforms, setup with types"
     def __init__(self, funcs=None, split_idx=None):
