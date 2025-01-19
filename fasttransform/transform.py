@@ -15,7 +15,7 @@ from fastcore.utils import *
 from plum.function import Function
 from plum import NotFoundLookupError
 
-from .utils import is_tuple, retain_type, retain_meta, cast, get_name
+from .utils import get_name, is_tuple, retain_type
 
 # %% ../nbs/01_transform.ipynb 9
 def merge_funcs(*fs):
