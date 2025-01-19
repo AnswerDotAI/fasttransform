@@ -52,7 +52,7 @@ def cast(x, typ):
     return retain_meta(x, res)
 
 # %% ../nbs/00_utils.ipynb 18
-def retain_type(new, old, ret_type,as_copy=False):
+def retain_type(new, old, ret_type=Any,as_copy=False):
     if new is None: return new
     if ret_type is NoneType: return new
     if ret_type is Any:
