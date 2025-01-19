@@ -13,6 +13,10 @@
 - [ ] Add docs re plum and autoreload (see plum docs)
 - [ ] pin plum to some greater than version
 
+## Open Questions
+
+- [ ] Repr changes now more args are possible
+
 ## Developer Guide
 
 If you are new to using `nbdev` here are some useful pointers to get you
