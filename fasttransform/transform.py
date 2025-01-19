@@ -40,7 +40,7 @@ class _TfmDict(dict):
     def __setitem__(self, k, v):
         if not _is_tfm_method(k, v): return super().__setitem__(k,v)
         if k not in self: super().__setitem__(k, Function(v))
-        self[k].dispatch(v)  
+        self[k].dispatch(v)
 
 # %% ../nbs/01_transform.ipynb 14
 class _TfmMeta(type):
