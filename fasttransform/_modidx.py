@@ -100,4 +100,5 @@ d = { 'settings': { 'branch': 'main',
                                      'fasttransform.utils.get_name': ('utils.html#get_name', 'fasttransform/utils.py'),
                                      'fasttransform.utils.is_tuple': ('utils.html#is_tuple', 'fasttransform/utils.py'),
                                      'fasttransform.utils.retain_meta': ('utils.html#retain_meta', 'fasttransform/utils.py'),
-                                     'fasttransform.utils.retain_type': ('utils.html#retain_type', 'fasttransform/utils.py')}}}
+                                     'fasttransform.utils.retain_type': ('utils.html#retain_type', 'fasttransform/utils.py'),
+                                     'fasttransform.utils.retain_types': ('utils.html#retain_types', 'fasttransform/utils.py')}}}
