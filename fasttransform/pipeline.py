@@ -10,7 +10,7 @@ from fastcore.imports import *
 from fastcore.foundation import *
 from fastcore.utils import *
 
-from .utils import _is_tuple
+from .utils import is_tuple
 from .transform import Transform
 
 # %% ../nbs/03_pipeline.ipynb 5
@@ -87,7 +87,7 @@ class Pipeline:
 
     def show(self, o, ctx=None, **kwargs):
         o = self.decode(o, full=False)
-        o1 = (o,) if not _is_tuple(o) else o
+        o1 = (o,) if not is_tuple(o) else o
         if hasattr(o, 'show'): ctx = o.show(ctx=ctx, **kwargs)
         else:
             for o_ in o1:
@@ -96,5 +96,5 @@ class Pipeline:
 
     def _is_showable(self, o):
         if hasattr(o, 'show'): return True
-        if _is_tuple(o): return all(hasattr(o_, 'show') for o_ in o)
+        if is_tuple(o): return all(hasattr(o_, 'show') for o_ in o)
         return False
