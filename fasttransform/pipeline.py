@@ -12,6 +12,7 @@ from fastcore.utils import *
 
 from .utils import is_tuple
 from .transform import Transform
+from .monkeydispatch import monkeydispatch
 
 # %% ../nbs/02_pipeline.ipynb 5
 def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):

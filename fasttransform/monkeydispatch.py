@@ -33,5 +33,5 @@ class MonkeyDispatcher(Dispatcher):
                 self.classes.get(gc,{}).pop(nm,None)
             return super().__call__(f)    
 
-# %% ../nbs/03_monkey_dispatch.ipynb 32
+# %% ../nbs/03_monkey_dispatch.ipynb 38
 monkeydispatch = MonkeyDispatcher()
