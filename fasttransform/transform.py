@@ -36,24 +36,34 @@ def _has_self_arg(f) -> bool:
     except (AttributeError, IndexError): return False
 
 # %% ../nbs/01_transform.ipynb 13
+def _get_self_type_annotation(f) -> type | None:
+    "Get type annotation of 'self' if exists and is Transform subclass, else None"
+    try: c = typing.get_type_hints(f)['self']
+    except (TypeError, NameError, KeyError): return None
+    if not issubclass(c,Transform) or c is Transform: raise ValueError("self must be subclass of Transform")
+    return c
+    
+
+# %% ../nbs/01_transform.ipynb 14
 class _TfmDict(dict):
     def __setitem__(self, k, v):
         if not _is_tfm_method(k, v): return super().__setitem__(k,v)
         if k not in self: super().__setitem__(k, Function(v))
         self[k].dispatch(v)
 
-# %% ../nbs/01_transform.ipynb 14
+# %% ../nbs/01_transform.ipynb 15
 class _TfmMeta(type):
     @classmethod
     def __prepare__(cls, name, bases): return _TfmDict()
 
     def __call__(cls, *args, **kwargs):
-        if issubclass(cls,Transform) and len(args)==1 and _has_self_arg(args[0]) and len(kwargs)==0: 
+        if len(args)==1 and len(kwargs)==0 and _has_self_arg(args[0]): 
             f, nm = args[0], args[0].__name__
-            if nm not in _tfm_methods: raise RuntimeError(f"{nm} not in {_tfm_methods}")
-            if not hasattr(cls, nm): setattr(cls, nm, Function(f).dispatch(f))
-            else: getattr(cls,nm).dispatch(f)
-            return cls
+            c = _get_self_type_annotation(f) or cls
+            if nm not in _tfm_methods: raise RuntimeError(f"{nm} not in {_tfm_methods}")         
+            if not hasattr(c, nm): setattr(c, nm, Function(f).dispatch(f))
+            else: getattr(c,nm).dispatch(f)
+            return c
         return super().__call__(*args, **kwargs)
 
 
@@ -66,7 +76,7 @@ class _TfmMeta(type):
                 if funcs: setattr(new_cls, nm, merge_funcs(*funcs))
         return new_cls
 
-# %% ../nbs/01_transform.ipynb 15
+# %% ../nbs/01_transform.ipynb 16
 class Transform(metaclass=_TfmMeta):
     "Delegates (`__call__`,`decode`,`setup`) to (<code>encodes</code>,<code>decodes</code>,<code>setups</code>) if `split_idx` matches"
     split_idx,init_enc,order,train_setup = None,None,0,None
@@ -109,21 +119,21 @@ class Transform(metaclass=_TfmMeta):
         return retain_type(method(*f_args,**kwargs), x, ret_type)
 
 
-# %% ../nbs/01_transform.ipynb 132
+# %% ../nbs/01_transform.ipynb 150
 class InplaceTransform(Transform):
     "A `Transform` that modifies in-place and just returns whatever it's passed"
     def _call(self, fn, split_idx=None, *args, **kwargs):
         super()._call(fn,split_idx,*args, **kwargs)
         return args[0]
 
-# %% ../nbs/01_transform.ipynb 136
+# %% ../nbs/01_transform.ipynb 154
 class DisplayedTransform(Transform):
     "A transform with a `__repr__` that shows its attrs"
 
     @property
     def name(self): return f"{super().name} -- {getattr(self,'__stored_args__',{})}\n"
 
-# %% ../nbs/01_transform.ipynb 142
+# %% ../nbs/01_transform.ipynb 160
 class ItemTransform(Transform):
     "A transform that always take tuples as items"
     _retain = True
@@ -137,13 +147,13 @@ class ItemTransform(Transform):
         return retain_type(y, x, Any)
      
 
-# %% ../nbs/01_transform.ipynb 151
+# %% ../nbs/01_transform.ipynb 169
 def get_func(t, name, *args, **kwargs):
     "Get the `t.name` (potentially partial-ized with `args` and `kwargs`) or `noop` if not defined"
     f = nested_callable(t, name)
     return f if not (args or kwargs) else partial(f, *args, **kwargs)
 
-# %% ../nbs/01_transform.ipynb 155
+# %% ../nbs/01_transform.ipynb 173
 class Func():
     "Basic wrapper around a `name` with `args` and `kwargs` to call on a given type"
     def __init__(self, name, *args, **kwargs): self.name,self.args,self.kwargs = name,args,kwargs
@@ -151,7 +161,7 @@ class Func():
     def _get(self, t): return get_func(t, self.name, *self.args, **self.kwargs)
     def __call__(self,t): return mapped(self._get, t)
 
-# %% ../nbs/01_transform.ipynb 158
+# %% ../nbs/01_transform.ipynb 176
 class _Sig():
     def __getattr__(self,k):
         def _inner(*args, **kwargs): return Func(k, *args, **kwargs)
