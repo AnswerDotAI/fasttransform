@@ -57,14 +57,14 @@ class _TfmMeta(type):
     def __prepare__(cls, name, bases): return _TfmDict()
 
     def __call__(cls, *args, **kwargs):
-        if len(args)==1 and len(kwargs)==0 and _has_self_arg(args[0]): 
-            f, nm = args[0], args[0].__name__
-            c = _get_self_type_annotation(f) or cls
-            if nm not in _tfm_methods: raise RuntimeError(f"{nm} not in {_tfm_methods}")         
-            if not hasattr(c, nm): setattr(c, nm, Function(f).dispatch(f))
-            else: getattr(c,nm).dispatch(f)
-            return c
-        return super().__call__(*args, **kwargs)
+        if len(args)!=1 or len(kwargs)>0 or not _has_self_arg(args[0]): 
+            return super().__call__(*args, **kwargs)
+        f, nm = args[0], args[0].__name__
+        c = _get_self_type_annotation(f) or cls
+        if nm not in _tfm_methods: raise RuntimeError(f"{nm} not in {_tfm_methods}")         
+        if not hasattr(c, nm): setattr(c, nm, Function(f).dispatch(f))
+        else: getattr(c,nm).dispatch(f)
+        return c
 
 
     def __new__(cls, name, bases, namespace):
