@@ -73,7 +73,8 @@ class Transform(metaclass=_TfmMeta):
     
     def __init__(self,enc=None,dec=None, split_idx=None, order=None):
         self.split_idx = ifnone(split_idx, self.split_idx)
-        if order is not None: self.order=order 
+        self.order = ifnone(order, getattr(self, 'order', 0))
+        if not is_listy(enc): self.order = getattr(enc,'order',self.order)
         if enc:=L(enc): self.encodes = Function(enc[0])
         for e in enc: self.encodes.dispatch(e)
         if dec:=L(dec): self.decodes = Function(dec[0])
@@ -109,21 +110,21 @@ class Transform(metaclass=_TfmMeta):
         return retain_type(method(*f_args,**kwargs), x, ret_type)
 
 
-# %% ../nbs/01_transform.ipynb 132
+# %% ../nbs/01_transform.ipynb 138
 class InplaceTransform(Transform):
     "A `Transform` that modifies in-place and just returns whatever it's passed"
     def _call(self, fn, split_idx=None, *args, **kwargs):
         super()._call(fn,split_idx,*args, **kwargs)
         return args[0]
 
-# %% ../nbs/01_transform.ipynb 136
+# %% ../nbs/01_transform.ipynb 142
 class DisplayedTransform(Transform):
     "A transform with a `__repr__` that shows its attrs"
 
     @property
     def name(self): return f"{super().name} -- {getattr(self,'__stored_args__',{})}\n"
 
-# %% ../nbs/01_transform.ipynb 142
+# %% ../nbs/01_transform.ipynb 148
 class ItemTransform(Transform):
     "A transform that always take tuples as items"
     _retain = True
@@ -137,13 +138,13 @@ class ItemTransform(Transform):
         return retain_type(y, x, Any)
      
 
-# %% ../nbs/01_transform.ipynb 151
+# %% ../nbs/01_transform.ipynb 157
 def get_func(t, name, *args, **kwargs):
     "Get the `t.name` (potentially partial-ized with `args` and `kwargs`) or `noop` if not defined"
     f = nested_callable(t, name)
     return f if not (args or kwargs) else partial(f, *args, **kwargs)
 
-# %% ../nbs/01_transform.ipynb 155
+# %% ../nbs/01_transform.ipynb 161
 class Func():
     "Basic wrapper around a `name` with `args` and `kwargs` to call on a given type"
     def __init__(self, name, *args, **kwargs): self.name,self.args,self.kwargs = name,args,kwargs
@@ -151,7 +152,7 @@ class Func():
     def _get(self, t): return get_func(t, self.name, *self.args, **self.kwargs)
     def __call__(self,t): return mapped(self._get, t)
 
-# %% ../nbs/01_transform.ipynb 158
+# %% ../nbs/01_transform.ipynb 164
 class _Sig():
     def __getattr__(self,k):
         def _inner(*args, **kwargs): return Func(k, *args, **kwargs)
