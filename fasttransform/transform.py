@@ -99,8 +99,10 @@ class Transform(metaclass=_TfmMeta):
     def decode(self, *args,split_idx=None, **kwargs): return self._call('decodes', *args, split_idx=split_idx, **kwargs)
     def setup(self, items=None, train_setup=False):
         train_setup = train_setup if self.train_setup is None else self.train_setup
-        setups = getattr(self,'setups',lambda o:o)
-        return setups(getattr(items, 'train', items) if train_setup else items)
+        items = getattr(items, 'train', items) if train_setup else items
+        if not hasattr(self,'setups'): return None
+        try: return self.setups(items)
+        except NotFoundLookupError: return None  # old default behavior of fastcore.TypeDispatch
 
     def _call(self, nm, *args, split_idx=None, **kwargs):
         if split_idx!=self.split_idx and self.split_idx is not None: return args[0]
