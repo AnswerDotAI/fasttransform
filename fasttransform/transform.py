@@ -95,14 +95,14 @@ class Transform(metaclass=_TfmMeta):
         enc = len(self.encodes.methods) if hasattr(self, 'encodes') else 0
         dec = len(self.decodes.methods) if hasattr(self, 'decodes') else 0
         return f'{self.name}(enc:{enc},dec:{dec})'
-    def __call__(self,*args,split_idx=None, **kwargs): return self._call('encodes', split_idx, *args,**kwargs)
-    def decode(self, *args,split_idx=None, **kwargs): return self._call('decodes', split_idx, *args, **kwargs)
+    def __call__(self,*args,split_idx=None, **kwargs): return self._call('encodes', *args, split_idx=split_idx, **kwargs)
+    def decode(self, *args,split_idx=None, **kwargs): return self._call('decodes', *args, split_idx=split_idx, **kwargs)
     def setup(self, items=None, train_setup=False):
         train_setup = train_setup if self.train_setup is None else self.train_setup
         setups = getattr(self,'setups',lambda o:o)
         return setups(getattr(items, 'train', items) if train_setup else items)
 
-    def _call(self, nm, split_idx=None, *args, **kwargs):
+    def _call(self, nm, *args, split_idx=None, **kwargs):
         if split_idx!=self.split_idx and self.split_idx is not None: return args[0]
         if not hasattr(self, nm): return args[0]
         return self._do_call(nm, *args, **kwargs)
@@ -123,8 +123,8 @@ add_docs(Transform, decode="Delegate to decodes to undo transform", setup="Deleg
 # %% ../nbs/01_transform.ipynb 143
 class InplaceTransform(Transform):
     "A `Transform` that modifies in-place and just returns whatever it's passed"
-    def _call(self, fn, split_idx=None, *args, **kwargs):
-        super()._call(fn,split_idx,*args, **kwargs)
+    def _call(self, fn, *args, split_idx=None, **kwargs):
+        super()._call(fn,*args, split_idx=split_idx, **kwargs)
         return args[0]
 
 # %% ../nbs/01_transform.ipynb 147
