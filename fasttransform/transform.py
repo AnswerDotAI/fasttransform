@@ -77,8 +77,14 @@ class Transform(metaclass=_TfmMeta):
         if not is_listy(enc): 
             self.order = getattr(enc,'order',self.order)
             if len(type_hints(enc)) > 0: self.input_types = union2tuple(first(type_hints(enc).values()))
-            self._name = get_name(enc)
-        if enc:=L(enc): self.encodes = Function(enc[0])
+        if enc:=L(enc): 
+                self._name = get_name(enc[0])
+                if not hasattr(enc[0],'__name__'): # Plum requires enc to have __name__ attr
+                    f = enc[0]
+                    def wrapped_enc(*args,**kwargs): return f(*args,**kwargs)
+                    wrapped_enc.__name__ = self._name
+                    enc[0] = wrapped_enc
+                self.encodes = Function(enc[0])
         for e in enc: self.encodes.dispatch(e)
         if dec:=L(dec): self.decodes = Function(dec[0])
         for d in dec: self.decodes.dispatch(d)
@@ -112,22 +118,23 @@ class Transform(metaclass=_TfmMeta):
         except NotFoundLookupError: return x
         return retain_type(method(*f_args,**kwargs), x, ret_type)
 
+add_docs(Transform, decode="Delegate to decodes to undo transform", setup="Delegate to setups to set up transform")
 
-# %% ../nbs/01_transform.ipynb 141
+# %% ../nbs/01_transform.ipynb 143
 class InplaceTransform(Transform):
     "A `Transform` that modifies in-place and just returns whatever it's passed"
     def _call(self, fn, split_idx=None, *args, **kwargs):
         super()._call(fn,split_idx,*args, **kwargs)
         return args[0]
 
-# %% ../nbs/01_transform.ipynb 145
+# %% ../nbs/01_transform.ipynb 147
 class DisplayedTransform(Transform):
     "A transform with a `__repr__` that shows its attrs"
 
     @property
     def name(self): return f"{super().name} -- {getattr(self,'__stored_args__',{})}\n"
 
-# %% ../nbs/01_transform.ipynb 151
+# %% ../nbs/01_transform.ipynb 153
 class ItemTransform(Transform):
     "A transform that always take tuples as items"
     _retain = True
@@ -141,13 +148,13 @@ class ItemTransform(Transform):
         return retain_type(y, x, Any)
      
 
-# %% ../nbs/01_transform.ipynb 160
+# %% ../nbs/01_transform.ipynb 162
 def get_func(t, name, *args, **kwargs):
     "Get the `t.name` (potentially partial-ized with `args` and `kwargs`) or `noop` if not defined"
     f = nested_callable(t, name)
     return f if not (args or kwargs) else partial(f, *args, **kwargs)
 
-# %% ../nbs/01_transform.ipynb 164
+# %% ../nbs/01_transform.ipynb 166
 class Func():
     "Basic wrapper around a `name` with `args` and `kwargs` to call on a given type"
     def __init__(self, name, *args, **kwargs): self.name,self.args,self.kwargs = name,args,kwargs
@@ -155,7 +162,7 @@ class Func():
     def _get(self, t): return get_func(t, self.name, *self.args, **self.kwargs)
     def __call__(self,t): return mapped(self._get, t)
 
-# %% ../nbs/01_transform.ipynb 167
+# %% ../nbs/01_transform.ipynb 169
 class _Sig():
     def __getattr__(self,k):
         def _inner(*args, **kwargs): return Func(k, *args, **kwargs)
