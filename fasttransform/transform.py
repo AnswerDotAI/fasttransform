@@ -100,9 +100,8 @@ class Transform(metaclass=_TfmMeta):
     def setup(self, items=None, train_setup=False):
         train_setup = train_setup if self.train_setup is None else self.train_setup
         items = getattr(items, 'train', items) if train_setup else items
-        if not hasattr(self,'setups'): return None
         try: return self.setups(items)
-        except NotFoundLookupError: return None  # old default behavior of fastcore.TypeDispatch
+        except (AttributeError, NotFoundLookupError): return None
 
     def _call(self, nm, *args, split_idx=None, **kwargs):
         if split_idx!=self.split_idx and self.split_idx is not None: return args[0]
