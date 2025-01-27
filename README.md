@@ -23,10 +23,20 @@ $ pip install fasttransform
 ### Transform
 
 Transform is a class that lets you create reusable data transformations.
-It behaves like a function, you can call it to `encode` your data. In
-addition it has an optional `decode` method that will reverse the
-function. And an optional `setup` method that can initialize some inner
-state.
+You initialize a Transform by passing in or decorating a raw function.
+The Transform then provides an enhanced version of that function via
+`Transform.encodes`, which can be used in your data pipeline.
+
+It provides various conveniences:
+
+- **Reversibility**. You can collect the raw function and its inverse
+  into one transform object.
+- **Customized initialization** You can customize the exact behavior of
+  a transform function on initialization.
+- **Type-based mulitiple dispatch**. Transforms can specialize their
+  behavior based on the runtime types of their arguments.
+- **Type conversion/preservation**. Transforms help you maintain desired
+  return types.
 
 The simplest way to create a Transform is by decorating a function:
 
@@ -36,7 +46,7 @@ from fasttransform import Transform, Pipeline
 
 ``` python
 @Transform
-def add_one(x: int): 
+def add_one(x): 
     return x + 1
 
 # Usage
@@ -45,9 +55,61 @@ add_one(2)
 
     3
 
-Transforms are **flexible**. You can specify multiple transforms with
-different type annotations and it will automatically pick up the correct
-one.
+### Reversibility
+
+To make a transform reversible, you provide the raw function and its
+inverse. This is useful in data pipelines where, for instance, you might
+want to normalize and then de-normalize numerical values, or encode to
+category indexes and then decode back to categories.
+
+``` python
+def enc(x): return x*2
+def dec(x): return x//2
+
+t = Transform(enc,dec)
+
+t(2), t.decode(2), t.decode(t(2))
+```
+
+    (4, 1, 2)
+
+### Customized initialization
+
+You can customize an individual Transform instance at initialization
+time, so that it can depend on aggregate properties of the data set.
+
+Here we define a z-score normalization Transform by defining `encodes`
+and `decodes` methods directly:
+
+``` python
+import statistics
+
+class NormalizeMean(Transform):
+    def setups(self, items): 
+        self.mean = statistics.mean(items)
+        self.std  = statistics.stdev(items)
+    
+    def encodes(self, x): 
+        return (x - self.mean) / self.std
+    
+    def decodes(self, x): 
+        return x * self.std + self.mean
+
+normalize = NormalizeMean()
+normalize.setup([1, 2, 3, 4, 5])
+normalize.mean
+```
+
+    3
+
+### Type-based multiple dispatch
+
+Instead of providing one raw functions, you can provide multiple raw
+functions which differ in their parameter types. Tranform will use
+type-based dispatch to automatically execute the correct function.
+
+This is handy when your inputs come in different types (eg., different
+image formats, different numerical types).
 
 ``` python
 def inc1(x:int): return x+1
@@ -67,41 +129,6 @@ original input is returned.
 add_one(2.0)
 ```
 
-    2.0
-
-Transforms are **reversible**, if you provide a `decode` function.
-
-``` python
-def enc(x): return x*2
-def dec(x): return x//2
-
-t = Transform(enc,dec)
-
-t(2), t.decode(2), t.decode(t(2))
-```
-
-    (4, 1, 2)
-
-Transforms can be **stateful**, you can initialize them with the `setup`
-method. This may be useful when you want to set scaling parameters based
-on your training split in your machine learning pipeline.
-
-``` python
-class NormalizeMean(Transform):
-    def setups(self, items): 
-        self.mean = sum(items) / len(items)
-    
-    def encodes(self, x): 
-        return x - self.mean
-    
-    def decodes(self, x): 
-        return x + self.mean
-
-normalize = NormalizeMean()
-normalize.setup([1, 2, 3, 4, 5])
-normalize.mean
-```
-
     3.0
 
 ``` python
@@ -110,120 +137,131 @@ normalize(3.0)
 
     0.0
 
-Transforms are **extendedible**, this may be useful when you want to
-create one Transform that can handle different data types.
+### Type conversion/preservation
 
-``` python
-@NormalizeMean
-def encodes(self, x:float): return x + self.mean + 5
+You initialize a Transform by passing in or decorating a raw function.
 
-@NormalizeMean
-def decodes(self, x:float): return x + self.mean + 5
+A Transform `encodes` or `decodes` will note the return type of its raw
+function, which may be defined explicitly or implicitly, and enhance
+type-handling behavior in three ways:
 
-normalize(2.0)
-```
+1.  **Guaranteed return type**. It will always return the return type of
+    the raw function, promoting values if necessary.
 
-    10.0
+2.  **Type Preservation**. It will return the runtime type of its
+    argument, whenever that is a subtype of the return type.
 
-Transforms try to be **type preserving** in the following order:
+3.  **Opt-out conversion**. If you explicitly mark the raw function’s
+    return type as `None`, then it will not perform any type conversion
+    or preservation.
 
-1.  your function’s return type annotation
-2.  your function’s actual input type, if it was a subtype of the return
-    value
-3.  if None is the return type annotation then no conversion will be
-    done
+Examples help make this clear:
 
-Let’s illustrate this with an example of a custom `float` subtype:
+#### Guaranteed return type
+
+Say you define `FS`, a subclass of `float`. The usual Python type
+promotion behavior means that an `FS` times a `float` is still a
+`float`:
 
 ``` python
 class FS(float):
-    def __repr__(self): return f'FS({float(self)})'
+  def __repr__(self): return f'FS({float(self)})'
+ 
+f1 = float(1)
+FS2 = FS(2)
+
+val = f1 * FS2
+type(val) # => float
 ```
 
-By default multiplying such a subtype with a regular `float` returns a
-`float`.
+    float
+
+With Transform, you can define a new multiplication operation which will
+be guaranteed to return a `FS`, because Transform reads the required raw
+function’s annotated return type:
 
 ``` python
-FS(5.0) * 5.0
-```
-
-    25.0
-
-However, in Transform you can change this behavior with type
-annotations.
-
-Illustration of case 1:
-
-``` python
-def enc(x)->FS: return x*2
-t = Transform(enc)
-t(1)
-```
-
-    FS(2.0)
-
-Illustration of case 2:
-
-``` python
-def enc(x): return x*2
-t = Transform(enc)
-t(FS(1))
+def double_FS(x)->FS: return FS(2)*x
+t = Transform(double_FS)
+val = t(1) 
+assert isinstance(val,FS)
+val
 ```
 
     FS(2.0)
 
-Note that in the case below, where the input is a `float` and the return
-type is `FS` there’s not conversion. The reason is: we can’t make sure
-some special information about `FS` is lost when converting to its
-parent class `float`.
+#### Type preservation
+
+Let us say that we define a transform *without* any return type
+annotation, so that the raw function is defined only by the behavior of
+multiplying its argument by the float 2.0.
+
+Multiplying the subtype `FS` with the float value 2 would normally
+return a `float`. However, Transform’s `encodes` will *preserve the
+runtime type of its argument*, so that it returns `FS`:
 
 ``` python
-def enc(x): return FS(x*2)
-t = Transform(enc)
-t(1.0)
+def double(x): return x*2.0  # no type annotation
+t = Transform(double)
+fs1 = FS(1)
+val = t(fs1)
+assert isinstance(val,FS)
+val # => FS(2), an FS value of 2
 ```
 
     FS(2.0)
 
-Illustration of case 3:
+#### Opt-out conversion
+
+Sometimes you don’t want Transform to do any type-based logic. You can
+opt-out of this system by declaring that your raw function’s return type
+is `None`:
 
 ``` python
-def enc(x)->None: return x*2
-t = Transform(enc)
-t(FS(1))
+def double_none(x) -> None: return x*2.0  # "None" returnt type means "no conversion"
+t = Transform(double_none)
+fs1 = FS(1)
+val = t(fs1)
+assert isinstance(val,float)
+val # => 2.0, a float of 2, because of fallback to standard Python type logic
 ```
 
     2.0
-
-In the last case we see a `float` because a mutiplication of `FS` with a
-`float` returns a `float` and no additional type conversion is done.
 
 ### Pipelines
 
 Transforms can be combined into larger **Pipelines**:
 
 ``` python
-p = Pipeline((t, normalize))
+def double(x): return x*2.0 
+def halve(x): return x/2.0
+dt = Transform(double,halve)
 
-p(5)  # 5 * 2 - 3
+class NormalizeMean(Transform):
+    def setups(self, items): 
+        self.mean = statistics.mean(items)
+        self.std  = statistics.stdev(items)
+    
+    def encodes(self, x):
+        return (x - self.mean) / self.std
+    
+    def decodes(self, x):
+        return x * self.std + self.mean
+
+
+p = Pipeline((dt, normalize))
+
+v = p(5)
+v
 ```
 
-    7.0
+    4.427188724235731
 
 ``` python
-p.decode(7) # (7 + 3) / 2
+p.decode(v)
 ```
 
-    10.0
-
-If you’re wondering the types are changing from `int` to `float` in this
-case:
-
-`self.mean` in the `NormalizeMean` transform is a `float`. So the
-automatic type conversion does not trigger here, as `float` is not a
-subtype of `int`. And that’s probably a good thing, because otherwise we
-might lose some information here whenever `self.mean` has some decimal
-value.
+    5.0
 
 ### Documentation
 
