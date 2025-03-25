@@ -8,6 +8,7 @@ __all__ = ['Sig', 'Transform', 'InplaceTransform', 'DisplayedTransform', 'ItemTr
 
 # %% ../nbs/01_transform.ipynb 1
 from typing import Any
+import inspect
 
 from fastcore.imports import *
 from fastcore.foundation import *
@@ -51,7 +52,7 @@ class _TfmDict(dict):
         if k not in self: super().__setitem__(k, Function(v))
         self[k].dispatch(v)
 
-# %% ../nbs/01_transform.ipynb 13
+# %% ../nbs/01_transform.ipynb 14
 class _TfmMeta(type):
     @classmethod
     def __prepare__(cls, name, bases): return _TfmDict()
@@ -63,7 +64,11 @@ class _TfmMeta(type):
             if not hasattr(cls, nm): setattr(cls, nm, Function(f).dispatch(f))
             else: getattr(cls,nm).dispatch(f)
             return cls
-        return super().__call__(*args, **kwargs)
+        obj = super().__call__(*args, **kwargs)
+        # _TfmMeta.__new__ replaces cls.__signature__ which breaks the signature of a callable
+        # instances of cls, fix it
+        if hasattr(obj, '__call__'): obj.__signature__ = inspect.signature(obj.__call__)
+        return obj
 
 
     def __new__(cls, name, bases, namespace):
@@ -73,9 +78,11 @@ class _TfmMeta(type):
                 funcs = [getattr(new_cls, nm)] + [getattr(b, nm,None) for b in bases]
                 funcs = [f for f in funcs if f]
                 if funcs: setattr(new_cls, nm, _merge_funcs(*funcs))
+        # _TfmMeta.__call__ shadows the signature of inheriting classes, set it back
+        new_cls.__signature__ = inspect.signature(new_cls.__init__)
         return new_cls
 
-# %% ../nbs/01_transform.ipynb 14
+# %% ../nbs/01_transform.ipynb 15
 class Transform(metaclass=_TfmMeta):
     "Delegates (`__call__`,`decode`,`setup`) to (<code>encodes</code>,<code>decodes</code>,<code>setups</code>) if `split_idx` matches"
     split_idx,init_enc,order,train_setup = None,None,0,None
@@ -130,21 +137,21 @@ class Transform(metaclass=_TfmMeta):
 
 add_docs(Transform, decode="Delegate to decodes to undo transform", setup="Delegate to setups to set up transform")
 
-# %% ../nbs/01_transform.ipynb 155
+# %% ../nbs/01_transform.ipynb 157
 class InplaceTransform(Transform):
     "A `Transform` that modifies in-place and just returns whatever it's passed"
     def _call(self, fn, *args, split_idx=None, **kwargs):
         super()._call(fn,*args, split_idx=split_idx, **kwargs)
         return args[0]
 
-# %% ../nbs/01_transform.ipynb 159
+# %% ../nbs/01_transform.ipynb 161
 class DisplayedTransform(Transform):
     "A transform with a `__repr__` that shows its attrs"
 
     @property
     def name(self): return f"{super().name} -- {getattr(self,'__stored_args__',{})}\n"
 
-# %% ../nbs/01_transform.ipynb 165
+# %% ../nbs/01_transform.ipynb 167
 class ItemTransform(Transform):
     "A transform that always take tuples as items"
     _retain = True
@@ -158,13 +165,13 @@ class ItemTransform(Transform):
         return retain_type(y, x, Any)
      
 
-# %% ../nbs/01_transform.ipynb 174
+# %% ../nbs/01_transform.ipynb 176
 def get_func(t, name, *args, **kwargs):
     "Get the `t.name` (potentially partial-ized with `args` and `kwargs`) or `noop` if not defined"
     f = nested_callable(t, name)
     return f if not (args or kwargs) else partial(f, *args, **kwargs)
 
-# %% ../nbs/01_transform.ipynb 178
+# %% ../nbs/01_transform.ipynb 180
 class Func():
     "Basic wrapper around a `name` with `args` and `kwargs` to call on a given type"
     def __init__(self, name, *args, **kwargs): self.name,self.args,self.kwargs = name,args,kwargs
@@ -172,7 +179,7 @@ class Func():
     def _get(self, t): return get_func(t, self.name, *self.args, **self.kwargs)
     def __call__(self,t): return mapped(self._get, t)
 
-# %% ../nbs/01_transform.ipynb 181
+# %% ../nbs/01_transform.ipynb 183
 class _Sig():
     def __getattr__(self,k):
         def _inner(*args, **kwargs): return Func(k, *args, **kwargs)
@@ -181,7 +188,7 @@ class _Sig():
 Sig = _Sig()
      
 
-# %% ../nbs/01_transform.ipynb 187
+# %% ../nbs/01_transform.ipynb 189
 def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     "Apply all `func_nm` attribute of `tfms` on `x`, maybe in `reverse` order"
     if reverse: tfms = reversed(tfms)
@@ -191,13 +198,13 @@ def compose_tfms(x, tfms, is_enc=True, reverse=False, **kwargs):
     return x
      
 
-# %% ../nbs/01_transform.ipynb 192
+# %% ../nbs/01_transform.ipynb 194
 def mk_transform(f):
     "Convert function `f` to `Transform` if it isn't already one"
     f = instantiate(f)
     return f if isinstance(f,(Transform,Pipeline)) else Transform(f)
 
-# %% ../nbs/01_transform.ipynb 193
+# %% ../nbs/01_transform.ipynb 195
 def gather_attrs(o, k, nm):
     "Used in __getattr__ to collect all attrs `k` from `self.{nm}`"
     if k.startswith('_') or k==nm: raise AttributeError(k)
@@ -206,12 +213,12 @@ def gather_attrs(o, k, nm):
     if not res: raise AttributeError(k)
     return res[0] if len(res)==1 else L(res)
 
-# %% ../nbs/01_transform.ipynb 194
+# %% ../nbs/01_transform.ipynb 196
 def gather_attr_names(o, nm):
     "Used in __dir__ to collect all attrs `k` from `self.{nm}`"
     return L(getattr(o,nm)).map(dir).concat().unique()
 
-# %% ../nbs/01_transform.ipynb 195
+# %% ../nbs/01_transform.ipynb 197
 class Pipeline:
     "A pipeline of composed (for encode/decode) transforms, setup with types"
     def __init__(self, funcs=None, split_idx=None):
