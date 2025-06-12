@@ -266,4 +266,4 @@ p.decode(v)
 ### Documentation
 
 This was just a quickstart. Learn more by reading the
-[documentation](https://github.io/AnswerDotAI/fasttransform).
+[documentation](https://answerdotai.github.io/fasttransform/).
