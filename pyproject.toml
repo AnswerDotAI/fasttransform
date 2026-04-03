@@ -31,4 +31,5 @@ version = {attr = "fasttransform.__version__"}
 include = ["fasttransform"]
 
 [tool.nbdev]
+allowed_cell_metadata_keys = ["solveit_ai"]
 custom_sidebar = false
