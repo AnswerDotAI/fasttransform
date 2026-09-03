@@ -151,7 +151,7 @@ class DisplayedTransform(Transform):
     "A transform with a `__repr__` that shows its attrs"
 
     @property
-    def name(self): return f"{super().name} -- {getattr(self,'__stored_args__',{})}\n"
+    def name(self): return f"{super().name} -- {init_args(self)}\n"
 
 # %% ../nbs/01_transform.ipynb #09e4c9ce
 class ItemTransform(Transform):
