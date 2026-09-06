@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.4
+
+### Bugs Squashed
+
+- Pin plum-dispatch below 2.10, which breaks `__doc__` assignment on compiled wheels ([#15](https://github.com/AnswerDotAI/fasttransform/pull/15)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.3
 
 ### New Features
