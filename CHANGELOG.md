@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.5
+
+### Bugs Squashed
+
+- Pin fastcore>=2.2.22, which `DisplayedTransform.name` needs for `init_args` ([#16](https://github.com/AnswerDotAI/fasttransform/pull/16)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.4
 
 ### Bugs Squashed
