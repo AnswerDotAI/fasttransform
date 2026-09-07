@@ -12,7 +12,7 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Jeremy Howard and Rens Dimmendaal and Alexis Gallagher", email = "info@fast.ai"}]
 keywords = ['nbdev', 'jupyter', 'notebook', 'python']
 classifiers = ["Natural Language :: English", "Intended Audience :: Developers", "Development Status :: 3 - Alpha", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only"]
-dependencies = ['fastcore>=2.2.21', 'plum-dispatch<2.10']
+dependencies = ['fastcore>=2.2.22', 'plum-dispatch<2.10']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fasttransform"
